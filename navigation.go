@@ -259,8 +259,6 @@ func submitSearch(g *gocui.Gui, v *gocui.View) error {
 	} else {
 		// fmt.Fprintf(lv, "Searching for %s in stream %s...\n", line, stream)
 		query = line
-		renderStatus(g)
-
 		queryFinished = false
 	}
 
@@ -372,6 +370,7 @@ func renderStatus(g *gocui.Gui) error {
 	v.Clear()
 	fmt.Fprintf(v, "[stream: %s] ", stream)
 	fmt.Fprintf(v, "[tail: %t] ", tail)
+	fmt.Fprintf(v, "[results: %d] ", resultsCount)
 	// fmt.Fprintf(v, "[query: %s] ", query)
 	return nil
 }

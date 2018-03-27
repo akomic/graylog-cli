@@ -32,7 +32,8 @@ var (
 	streamIDs     = map[string]string{}
 	query         = ""
 	queryFinished = true
-	lastTimestamp = ""
+	lastTimestamp time.Time
+	resultsCount  = 0
 
 	messageIDs = make([]string, 1000)
 	messages   = map[string]map[string]interface{}{}
@@ -156,19 +157,25 @@ func doLogs(g *gocui.Gui) {
 			if !queryFinished {
 				mu.Lock()
 				queryFinished = true
-				mu.Unlock()
 
 				g.Update(func(g *gocui.Gui) error {
 					lv, err := g.View("logs")
 					if err != nil {
 						return err
 					}
-					// lv.Clear()
+					if !tail {
+						lv.Clear()
+						resultsCount = 0
+					}
 					// fmt.Fprintf(lv, "Results for %s stream %s\n", query, stream)
 
+					now := time.Now()
+					then := now.Add(-1200 * time.Hour)
+
 					glc := gl.NewBasicAuthClient(GLCFG.BaseURL, GLCFG.Username, GLCFG.Password)
-					msgs, err := glc.SearchLogs(query, streamIDs[stream])
+					msgs, err := glc.SearchLogs(query, streamIDs[stream], then, now)
 					if err != nil {
+						log.Warnf("%v\n", err)
 						return err
 					}
 					for _, s := range msgs.Data {
@@ -177,11 +184,14 @@ func doLogs(g *gocui.Gui) {
 						fmt.Fprintf(lv, "%s\n", lineToDisplay)
 						// fmt.Fprintf(lv, "%s\n", reflect.TypeOf(messageIDs))
 						recordMessage(lineToDisplay, msg)
-						lastTimestamp = fmt.Sprintf("%s", msg["timestamp"])
+						lastTimestamp, _ = time.Parse(time.RFC3339Nano, fmt.Sprintf("%s", msg["timestamp"]))
+						resultsCount += 1
 					}
 					renderFields(g)
+					renderStatus(g)
 					return nil
 				})
+				mu.Unlock()
 			}
 		}
 	}

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	// "net/url"
 	"io/ioutil"
-	// "time"
+	"time"
 	// log "github.com/sirupsen/logrus"
 	// l "graylog-cli/log"
 	// "reflect"
@@ -81,7 +81,7 @@ type Messages struct {
 }
 
 // SearchLogs function
-func (s *Client) SearchLogs(queryString, streamID string) (Messages, error) {
+func (s *Client) SearchLogs(queryString, streamID string, from, to time.Time) (Messages, error) {
 	var messages Messages
 
 	url := fmt.Sprintf(s.BaseURL + "/search/universal/absolute")
@@ -95,22 +95,14 @@ func (s *Client) SearchLogs(queryString, streamID string) (Messages, error) {
 	// q.Add("fields", "timestamp,source,message")
 	q.Add("filter", fmt.Sprintf("streams:%s", streamID))
 	q.Add("fields", "*")
-	q.Add("limit", "50")
+	q.Add("limit", "100")
 	q.Add("sort", "timestamp:asc")
 
 	// now := time.Now()
-	// then := now.Add(-12 * time.Hour)
+	// then := now.Add(-720 * time.Hour)
 
-	// msgDetails := fmt.Sprintf("%s\n", then.UTC().Format(time.RFC3339))
-
-	// q.Add("from", fmt.Sprintf("%s", then.UTC().Format(time.RFC3339)))
-	// q.Add("to", fmt.Sprintf("%s", now.UTC().Format(time.RFC3339)))
-
-	// q.Add("from", "2018-03-01T09:54:20.000Z")
-	// q.Add("to", "2018-03-09T09:54:20.000Z")
-
-	q.Add("from", "2018-03-01T09:54:20.000Z")
-	q.Add("to", "2018-03-09T09:54:20.000Z")
+	q.Add("from", fmt.Sprintf("%s", from.UTC().Format(time.RFC3339Nano)))
+	q.Add("to", fmt.Sprintf("%s", to.UTC().Format(time.RFC3339Nano)))
 
 	req.URL.RawQuery = q.Encode()
 
