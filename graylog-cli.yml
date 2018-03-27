@@ -1,0 +1,5 @@
+---
+username: admin
+password: password
+allowinsecuretls: true
+baseurl: https://graylogserver.url/api
