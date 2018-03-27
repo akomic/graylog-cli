@@ -1,24 +1,20 @@
 package main
 
 import (
-	"crypto/md5"
-	"encoding/hex"
 	"fmt"
-	gl "graylog-cli/graylog"
 	"os"
-	"reflect"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/jroimartin/gocui"
 	homedir "github.com/mitchellh/go-homedir"
-	log "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 var (
+	log     = logrus.New()
 	viewArr = []string{"console", "streams", "logs"}
 	active  = 0
 
@@ -111,6 +107,13 @@ func initConfig() {
 		os.Exit(1)
 	}
 	GLCFG = NewGLCliConfig(viper.GetString("username"), viper.GetString("password"), viper.GetString("baseurl"), viper.GetBool("allowinsecuretls"))
+
+	file, err := os.OpenFile("/tmp/graylog-cli.log", os.O_CREATE|os.O_WRONLY, 0666)
+	if err == nil {
+		log.Out = file
+	} else {
+		log.Info("Failed to log to file, using default stderr")
+	}
 	//log.Infof("%v\n", GLCFG)
 }
 
@@ -138,222 +141,6 @@ func runTail(cmd *cobra.Command, args []string) {
 	}
 
 	wg.Wait()
-}
-
-func quit(g *gocui.Gui, v *gocui.View) error {
-	close(done)
-	return gocui.ErrQuit
-}
-
-func setCurrentViewOnTop(g *gocui.Gui, name string) (*gocui.View, error) {
-	if _, err := g.SetCurrentView(name); err != nil {
-		return nil, err
-	}
-	return g.SetViewOnTop(name)
-}
-
-func switchStream(g *gocui.Gui, v *gocui.View) error {
-	var line string
-
-	lv, err := g.View("logs")
-	if err != nil {
-		return err
-	}
-
-	_, cy := v.Cursor()
-	if line, err = v.Line(cy); err != nil {
-		line = ""
-	}
-	// lv.Clear()
-	fmt.Fprintf(lv, "Selecting Stream %s with id %s\n", line, streamIDs[line])
-	stream = line
-
-	renderStatus(g)
-	return nil
-}
-
-func lineInMessages(l string) map[string]interface{} {
-	for _, mid := range messageIDs {
-		if mid == l {
-			if val, ok := messages[mid]; ok {
-				fmt.Println(reflect.TypeOf(val))
-				return val
-			}
-		}
-	}
-	return nil
-}
-
-func processLogLine(g *gocui.Gui, v *gocui.View) error {
-	var line string
-	var err error
-
-	// lv, err := g.View("logs")
-	// if err != nil {
-	// 	return err
-	// }
-
-	_, cy := v.Cursor()
-	if line, err = v.Line(cy); err != nil {
-		line = ""
-	}
-	lineID := getMD5Hash(strings.TrimSpace(line))
-	msg := lineInMessages(lineID)
-	// fmt.Fprintf(lv, "Processing line %s\n", lineInMessages(lineID))
-
-	// msgDetails := fmt.Sprintf("%s\n", time.Now().UTC().Format(time.RFC3339))
-	now := time.Now()
-	then := now.Add(-12 * time.Hour)
-
-	msgDetails := fmt.Sprintf("%s\n", then.UTC().Format(time.RFC3339))
-	for k, v := range msg {
-		msgDetails = fmt.Sprintf("%s %s:\"%v\"\n", msgDetails, k, v)
-	}
-	previousView = "logs"
-	drillDown(g, fmt.Sprintf("%s", msgDetails))
-
-	return nil
-}
-
-func applyFilter(g *gocui.Gui, v *gocui.View) error {
-	var line string
-
-	cv, err := g.View("console")
-	if err != nil {
-		return err
-	}
-
-	_, cy := v.Cursor()
-	if line, err = v.Line(cy); err != nil {
-		line = ""
-	}
-	if query != "" {
-		query = fmt.Sprintf("%s AND %s", query, strings.TrimSpace(line))
-	} else {
-		query = line
-	}
-
-	cv.Clear()
-	fmt.Fprintf(cv, "%s", query)
-
-	closeMsg(g, v)
-
-	submitSearch(g, cv)
-
-	return nil
-}
-
-func submitFieldFilter(g *gocui.Gui, v *gocui.View) error {
-	var line string
-
-	lv, err := g.View("logs")
-	if err != nil {
-		return err
-	}
-
-	_, cy := v.Cursor()
-	if line, err = v.Line(cy); err != nil {
-		line = ""
-	}
-	fmt.Fprintf(lv, "Selecting Field %s\n", line)
-	return nil
-}
-
-func getMD5Hash(text string) string {
-	hasher := md5.New()
-	hasher.Write([]byte(text))
-	return hex.EncodeToString(hasher.Sum(nil))
-}
-
-func fieldExists(f string) bool {
-	for _, field := range fields {
-		if field == f {
-			return true
-		}
-	}
-	return false
-}
-
-func recordMessage(identString string, m map[string]interface{}) {
-	ident := getMD5Hash(identString)
-	messageIDs = append(messageIDs, ident)
-	if len(messageIDs) > 999 {
-		copy(messageIDs, messageIDs[1:])
-		messageIDs = messageIDs[:len(messageIDs)-1]
-	}
-	messages[ident] = m
-
-	for k := range m {
-		if !fieldExists(k) {
-			fields = append(fields, k)
-		}
-	}
-}
-
-func submitSearch(g *gocui.Gui, v *gocui.View) error {
-	var line string
-
-	lv, err := g.View("logs")
-	if err != nil {
-		return err
-	}
-	lv.Clear()
-
-	_, cy := v.Cursor()
-	if line, err = v.Line(cy); err != nil {
-		line = ""
-	}
-
-	// lv.Clear()
-	if stream == "" {
-		fmt.Fprintf(lv, "First select stream")
-	} else {
-		// fmt.Fprintf(lv, "Searching for %s in stream %s...\n", line, stream)
-		query = line
-		renderStatus(g)
-
-		glc := gl.NewBasicAuthClient(GLCFG.BaseURL, GLCFG.Username, GLCFG.Password)
-		msgs, err := glc.SearchLogs(query, streamIDs[stream])
-		if err != nil {
-			return err
-		}
-		for _, s := range msgs.Data {
-			msg := s["message"].(map[string]interface{})
-			lineToDisplay := fmt.Sprintf("%s %s %s", msg["timestamp"], msg["source"], msg["message"])
-			fmt.Fprintf(lv, "%s\n", lineToDisplay)
-			// fmt.Fprintf(lv, "%s\n", reflect.TypeOf(messageIDs))
-			recordMessage(lineToDisplay, msg)
-		}
-		renderFields(g)
-	}
-
-	return nil
-}
-
-func renderStatus(g *gocui.Gui) error {
-	v, err := g.View("status")
-	if err != nil {
-		return err
-	}
-
-	v.Clear()
-	fmt.Fprintf(v, "[stream: %s] ", stream)
-	fmt.Fprintf(v, "[tail: %t] ", !pause)
-	// fmt.Fprintf(v, "[query: %s] ", query)
-	return nil
-}
-
-func renderFields(g *gocui.Gui) error {
-	v, err := g.View("fields")
-	if err != nil {
-		return err
-	}
-
-	v.Clear()
-	for _, f := range fields {
-		fmt.Fprintf(v, "%s\n", f)
-	}
-	return nil
 }
 
 func doLogs(g *gocui.Gui) {

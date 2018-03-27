@@ -5,7 +5,6 @@ import (
 	gl "graylog-cli/graylog"
 
 	"github.com/jroimartin/gocui"
-	log "github.com/sirupsen/logrus"
 )
 
 func layout(g *gocui.Gui) error {

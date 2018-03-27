@@ -7,8 +7,12 @@ import (
 	// "net/url"
 	"io/ioutil"
 	// "time"
-	log "github.com/sirupsen/logrus"
+	// log "github.com/sirupsen/logrus"
+	// l "graylog-cli/log"
+	// "reflect"
 )
+
+// var log = l.Log
 
 // Client credentials struct
 type Client struct {
@@ -32,7 +36,7 @@ type Streams struct {
 }
 
 func (s *Client) doRequest(req *http.Request) ([]byte, error) {
-	log.Infof("%v\n", s)
+	// log.Infof("%v\n", s)
 	req.SetBasicAuth(s.Username, s.Password)
 	req.Header.Set("Accept", "application/json")
 	client := &http.Client{}
@@ -54,7 +58,7 @@ func (s *Client) doRequest(req *http.Request) ([]byte, error) {
 // ListStreams get from graylog server list of streams
 func (s *Client) ListStreams() (Streams, error) {
 	var streams Streams
-	log.Infof("%v\n", s)
+	// log.Infof("%v\n", s)
 	url := fmt.Sprintf(s.BaseURL + "/streams")
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {

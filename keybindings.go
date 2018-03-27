@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/jroimartin/gocui"
-	"log"
 )
 
 func keybindings(g *gocui.Gui) error {
