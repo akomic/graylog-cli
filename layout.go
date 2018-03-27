@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
-	"github.com/jroimartin/gocui"
 	gl "graylog-cli/graylog"
+
+	"github.com/jroimartin/gocui"
+	log "github.com/sirupsen/logrus"
 )
 
 func layout(g *gocui.Gui) error {
@@ -21,20 +23,21 @@ func layout(g *gocui.Gui) error {
 		// fmt.Fprintln(v, "Idea1")
 		// fmt.Fprintln(v, "Idea2")
 		// fmt.Fprintln(v, "Idea2")
-
-		glc := gl.NewBasicAuthClient("admin", "CNVYR0cks")
+		log.Info("before")
+		glc := gl.NewBasicAuthClient(GLCFG.BaseURL, GLCFG.Username, GLCFG.Password)
 		streams, err := glc.ListStreams()
+		log.Info("after")
 		if err != nil {
 			return err
-		} else {
-			for i, s := range streams.Data {
-				if i == 0 {
-					stream = fmt.Sprintf("%s", s["title"])
-				}
-
-				streamIDs[fmt.Sprintf("%s", s["title"])] = fmt.Sprintf("%s", s["id"])
-				fmt.Fprintf(v, "%s\n", s["title"])
+		}
+		log.Info("failed on error")
+		for i, s := range streams.Data {
+			if i == 0 {
+				stream = fmt.Sprintf("%s", s["title"])
 			}
+
+			streamIDs[fmt.Sprintf("%s", s["title"])] = fmt.Sprintf("%s", s["id"])
+			fmt.Fprintf(v, "%s\n", s["title"])
 		}
 
 		if _, err = setCurrentViewOnTop(g, "streams"); err != nil {

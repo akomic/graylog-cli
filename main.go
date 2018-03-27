@@ -4,18 +4,26 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
-	"github.com/jroimartin/gocui"
 	gl "graylog-cli/graylog"
-	"log"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jroimartin/gocui"
+	homedir "github.com/mitchellh/go-homedir"
+	log "github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var (
 	viewArr = []string{"console", "streams", "logs"}
 	active  = 0
+
+	// Flags
+	fCfgFile, fGraylogHostname, fUserName, fPassword string
 
 	done = make(chan struct{})
 	wg   sync.WaitGroup
@@ -36,10 +44,80 @@ var (
 	previousView = "console"
 )
 
+// GLCliConfig struct represent minimum configuration required for
+// program to function
+type GLCliConfig struct {
+	Username         string
+	Password         string
+	BaseURL          string
+	AllowInsecureTLS bool
+}
+
+// NewGLCliConfig returns new GLCliConfig struct
+func NewGLCliConfig(username, password, baseurl string, allowinsecuretls bool) *GLCliConfig {
+	return &GLCliConfig{
+		Username:         username,
+		Password:         password,
+		BaseURL:          baseurl,
+		AllowInsecureTLS: allowinsecuretls,
+	}
+}
+
+// GLCFG Global configuration
+var GLCFG *GLCliConfig
+
+var mainCmd = &cobra.Command{
+	Use:   "graylog-cli",
+	Short: "Shows streaming logs from remote graylog server",
+	Run:   runTail,
+}
+
 func main() {
+	mainCmd.Execute()
+}
+
+func init() {
+	cobra.OnInitialize(initConfig)
+	mainCmd.PersistentFlags().StringVarP(&fCfgFile, "config", "c", "", "config file (default is $HOME/.config/graylog-cli.yml)")
+	mainCmd.PersistentFlags().StringVarP(&fGraylogHostname, "graylog-host-url", "g", "admin", "Graylog Server URL")
+	mainCmd.PersistentFlags().StringVarP(&fUserName, "username", "u", "admin", "Username user for graylog access")
+	mainCmd.PersistentFlags().StringVarP(&fPassword, "password", "p", "password", "Password for graylog access")
+	viper.SetDefault("username", "admin")
+	viper.SetDefault("password", "password")
+	viper.SetDefault("graylog-host-url", "http://127.0.0.1/api")
+}
+
+func initConfig() {
+	// Don't forget to read config either from fCfgFile or from home directory!
+	viper.SetConfigType("yaml")
+	if fCfgFile != "" {
+		// Use config file from the flag.
+		viper.SetConfigFile(fCfgFile)
+	} else {
+		// Find home directory.
+		home, err := homedir.Dir()
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+
+		// Search config in ~/.config directory
+		viper.AddConfigPath(home + "/.config/")
+		viper.SetConfigName("graylog-cli")
+	}
+
+	if err := viper.ReadInConfig(); err != nil {
+		fmt.Println("Can't read config:", err)
+		os.Exit(1)
+	}
+	GLCFG = NewGLCliConfig(viper.GetString("username"), viper.GetString("password"), viper.GetString("baseurl"), viper.GetBool("allowinsecuretls"))
+	//log.Infof("%v\n", GLCFG)
+}
+
+func runTail(cmd *cobra.Command, args []string) {
 	g, err := gocui.NewGui(gocui.OutputNormal)
 	if err != nil {
-		log.Panicln(err)
+		log.Fatalln(err)
 	}
 	defer g.Close()
 
@@ -56,7 +134,7 @@ func main() {
 	go doLogs(g)
 
 	if err := g.MainLoop(); err != nil && err != gocui.ErrQuit {
-		log.Panicln(err)
+		log.Warnf("%v\n", err)
 	}
 
 	wg.Wait()
@@ -119,7 +197,7 @@ func processLogLine(g *gocui.Gui, v *gocui.View) error {
 	if line, err = v.Line(cy); err != nil {
 		line = ""
 	}
-	lineID := GetMD5Hash(strings.TrimSpace(line))
+	lineID := getMD5Hash(strings.TrimSpace(line))
 	msg := lineInMessages(lineID)
 	// fmt.Fprintf(lv, "Processing line %s\n", lineInMessages(lineID))
 
@@ -181,7 +259,7 @@ func submitFieldFilter(g *gocui.Gui, v *gocui.View) error {
 	return nil
 }
 
-func GetMD5Hash(text string) string {
+func getMD5Hash(text string) string {
 	hasher := md5.New()
 	hasher.Write([]byte(text))
 	return hex.EncodeToString(hasher.Sum(nil))
@@ -197,7 +275,7 @@ func fieldExists(f string) bool {
 }
 
 func recordMessage(identString string, m map[string]interface{}) {
-	ident := GetMD5Hash(identString)
+	ident := getMD5Hash(identString)
 	messageIDs = append(messageIDs, ident)
 	if len(messageIDs) > 999 {
 		copy(messageIDs, messageIDs[1:])
@@ -205,7 +283,7 @@ func recordMessage(identString string, m map[string]interface{}) {
 	}
 	messages[ident] = m
 
-	for k, _ := range m {
+	for k := range m {
 		if !fieldExists(k) {
 			fields = append(fields, k)
 		}
@@ -234,20 +312,19 @@ func submitSearch(g *gocui.Gui, v *gocui.View) error {
 		query = line
 		renderStatus(g)
 
-		glc := gl.NewBasicAuthClient("admin", "pass")
+		glc := gl.NewBasicAuthClient(GLCFG.BaseURL, GLCFG.Username, GLCFG.Password)
 		msgs, err := glc.SearchLogs(query, streamIDs[stream])
 		if err != nil {
 			return err
-		} else {
-			for _, s := range msgs.Data {
-				msg := s["message"].(map[string]interface{})
-				lineToDisplay := fmt.Sprintf("%s %s %s", msg["timestamp"], msg["source"], msg["message"])
-				fmt.Fprintf(lv, "%s\n", lineToDisplay)
-				// fmt.Fprintf(lv, "%s\n", reflect.TypeOf(messageIDs))
-				recordMessage(lineToDisplay, msg)
-			}
-			renderFields(g)
 		}
+		for _, s := range msgs.Data {
+			msg := s["message"].(map[string]interface{})
+			lineToDisplay := fmt.Sprintf("%s %s %s", msg["timestamp"], msg["source"], msg["message"])
+			fmt.Fprintf(lv, "%s\n", lineToDisplay)
+			// fmt.Fprintf(lv, "%s\n", reflect.TypeOf(messageIDs))
+			recordMessage(lineToDisplay, msg)
+		}
+		renderFields(g)
 	}
 
 	return nil

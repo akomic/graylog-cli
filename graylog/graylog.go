@@ -7,27 +7,32 @@ import (
 	// "net/url"
 	"io/ioutil"
 	// "time"
+	log "github.com/sirupsen/logrus"
 )
 
-const baseURL string = "http://127.0.0.1/api"
-
+// Client credentials struct
 type Client struct {
+	BaseURL  string
 	Username string
 	Password string
 }
 
-func NewBasicAuthClient(username, password string) *Client {
+// NewBasicAuthClient returns new Client credential struct
+func NewBasicAuthClient(baseurl, username, password string) *Client {
 	return &Client{
+		BaseURL:  baseurl,
 		Username: username,
 		Password: password,
 	}
 }
 
+// Streams JSON struct
 type Streams struct {
 	Data []map[string]interface{} `json:"streams"`
 }
 
 func (s *Client) doRequest(req *http.Request) ([]byte, error) {
+	log.Infof("%v\n", s)
 	req.SetBasicAuth(s.Username, s.Password)
 	req.Header.Set("Accept", "application/json")
 	client := &http.Client{}
@@ -46,10 +51,11 @@ func (s *Client) doRequest(req *http.Request) ([]byte, error) {
 	return body, nil
 }
 
+// ListStreams get from graylog server list of streams
 func (s *Client) ListStreams() (Streams, error) {
 	var streams Streams
-
-	url := fmt.Sprintf(baseURL + "/streams")
+	log.Infof("%v\n", s)
+	url := fmt.Sprintf(s.BaseURL + "/streams")
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return streams, err
@@ -65,14 +71,16 @@ func (s *Client) ListStreams() (Streams, error) {
 	return streams, nil
 }
 
+// Messages JSON struct
 type Messages struct {
 	Data []map[string]interface{} `json:"messages"`
 }
 
+// SearchLogs function
 func (s *Client) SearchLogs(queryString, streamID string) (Messages, error) {
 	var messages Messages
 
-	url := fmt.Sprintf(baseURL + "/search/universal/absolute")
+	url := fmt.Sprintf(s.BaseURL + "/search/universal/absolute")
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
