@@ -11,6 +11,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	gl "graylog-cli/graylog"
 )
 
 var (
@@ -24,13 +25,14 @@ var (
 	done = make(chan struct{})
 	wg   sync.WaitGroup
 
-	mu  sync.Mutex // protects ctr
-	ctr = 0
+	mu sync.Mutex // protects queryFinished
 
-	pause     = true
-	stream    = ""
-	streamIDs = map[string]string{}
-	query     = ""
+	tail          = false
+	stream        = ""
+	streamIDs     = map[string]string{}
+	query         = ""
+	queryFinished = true
+	lastTimestamp = ""
 
 	messageIDs = make([]string, 1000)
 	messages   = map[string]map[string]interface{}{}
@@ -65,7 +67,7 @@ var GLCFG *GLCliConfig
 var mainCmd = &cobra.Command{
 	Use:   "graylog-cli",
 	Short: "Shows streaming logs from remote graylog server",
-	Run:   runTail,
+	Run:   run,
 }
 
 func main() {
@@ -117,7 +119,7 @@ func initConfig() {
 	//log.Infof("%v\n", GLCFG)
 }
 
-func runTail(cmd *cobra.Command, args []string) {
+func run(cmd *cobra.Command, args []string) {
 	g, err := gocui.NewGui(gocui.OutputNormal)
 	if err != nil {
 		log.Fatalln(err)
@@ -151,21 +153,33 @@ func doLogs(g *gocui.Gui) {
 		case <-done:
 			return
 		case <-time.After(100 * time.Millisecond):
-			if !pause && stream != "" {
+			if !queryFinished {
 				mu.Lock()
-				n := ctr
-				ctr++
+				queryFinished = true
 				mu.Unlock()
 
 				g.Update(func(g *gocui.Gui) error {
-					v, err := g.View("logs")
+					lv, err := g.View("logs")
 					if err != nil {
 						return err
 					}
-					// v.Clear()
-					fmt.Fprintf(v, "[%d] Results for %s stream %s\n", n, query, stream)
-					// } else {
-					// 	fmt.Fprintf(v, "Idle ...\n")
+					// lv.Clear()
+					// fmt.Fprintf(lv, "Results for %s stream %s\n", query, stream)
+
+					glc := gl.NewBasicAuthClient(GLCFG.BaseURL, GLCFG.Username, GLCFG.Password)
+					msgs, err := glc.SearchLogs(query, streamIDs[stream])
+					if err != nil {
+						return err
+					}
+					for _, s := range msgs.Data {
+						msg := s["message"].(map[string]interface{})
+						lineToDisplay := fmt.Sprintf("%s %s %s", msg["timestamp"], msg["source"], msg["message"])
+						fmt.Fprintf(lv, "%s\n", lineToDisplay)
+						// fmt.Fprintf(lv, "%s\n", reflect.TypeOf(messageIDs))
+						recordMessage(lineToDisplay, msg)
+						lastTimestamp = fmt.Sprintf("%s", msg["timestamp"])
+					}
+					renderFields(g)
 					return nil
 				})
 			}

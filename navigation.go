@@ -8,7 +8,6 @@ import (
 
 	"crypto/md5"
 	"encoding/hex"
-	gl "graylog-cli/graylog"
 
 	"github.com/jroimartin/gocui"
 )
@@ -88,11 +87,11 @@ func nextView(g *gocui.Gui, v *gocui.View) error {
 	return nil
 }
 
-func pauseLogs(g *gocui.Gui, v *gocui.View) error {
-	if pause {
-		pause = false
+func tailLogs(g *gocui.Gui, v *gocui.View) error {
+	if tail {
+		tail = false
 	} else {
-		pause = true
+		tail = true
 	}
 	renderStatus(g)
 	return nil
@@ -262,19 +261,7 @@ func submitSearch(g *gocui.Gui, v *gocui.View) error {
 		query = line
 		renderStatus(g)
 
-		glc := gl.NewBasicAuthClient(GLCFG.BaseURL, GLCFG.Username, GLCFG.Password)
-		msgs, err := glc.SearchLogs(query, streamIDs[stream])
-		if err != nil {
-			return err
-		}
-		for _, s := range msgs.Data {
-			msg := s["message"].(map[string]interface{})
-			lineToDisplay := fmt.Sprintf("%s %s %s", msg["timestamp"], msg["source"], msg["message"])
-			fmt.Fprintf(lv, "%s\n", lineToDisplay)
-			// fmt.Fprintf(lv, "%s\n", reflect.TypeOf(messageIDs))
-			recordMessage(lineToDisplay, msg)
-		}
-		renderFields(g)
+		queryFinished = false
 	}
 
 	return nil
@@ -384,7 +371,7 @@ func renderStatus(g *gocui.Gui) error {
 
 	v.Clear()
 	fmt.Fprintf(v, "[stream: %s] ", stream)
-	fmt.Fprintf(v, "[tail: %t] ", !pause)
+	fmt.Fprintf(v, "[tail: %t] ", tail)
 	// fmt.Fprintf(v, "[query: %s] ", query)
 	return nil
 }
