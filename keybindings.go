@@ -29,7 +29,7 @@ func keybindings(g *gocui.Gui) error {
 		log.Panicln(err)
 	}
 
-	if err := g.SetKeybinding("", gocui.KeyCtrlT, gocui.ModNone, pauseLogs); err != nil {
+	if err := g.SetKeybinding("", gocui.KeyCtrlT, gocui.ModNone, tailLogs); err != nil {
 		log.Panicln(err)
 	}
 
